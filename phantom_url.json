@@ -1,3 +1,1 @@
-{
-  "websocket_url": "wss://8318e9b341b6.ngrok-free.app"
-}
+return "wss://8318e9b341b6.ngrok-free.app"
