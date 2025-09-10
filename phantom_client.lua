@@ -8,7 +8,7 @@ local SoundService = game:GetService("SoundService") -- สำหรับแจ
 -- ─── CONFIG ────────────────────────────── ⚙️
 local DEBUG_MODE   = false -- Toggle debug mode (true = enabled, false = disabled)
 local USE_DEFAULT_URL = true
-local DEFAULT_URL     = " wss://220303c246ba.ngrok-free.app"
+local DEFAULT_URL     = "wss://34203debd931.ngrok-free.app"
 
 local wsApi = WebSocket or WebSocketClient or (syn and syn.websocket)
 if not wsApi then
@@ -478,7 +478,6 @@ local function handleMessage(msg)
 end
 
 -- ─── connect ─────────────────────────── 🔌
-createChatUI()
 function connectToHub(url)
     if connection and connected then
         if DEBUG_MODE then log("🔌 Already connected") end
@@ -497,6 +496,7 @@ function connectToHub(url)
     end  
 
     connection, connected = sock, true  
+    createChatUI() -- สร้าง UI เมื่อเชื่อมต่อสำเร็จ
 
     if connection.OnMessage then  
         connection.OnMessage:Connect(function(raw) pcall(handleMessage, raw) end)  
