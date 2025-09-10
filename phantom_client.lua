@@ -6,12 +6,15 @@ local PlayerGui   = LocalPlayer:WaitForChild("PlayerGui")
 local SoundService = game:GetService("SoundService") -- สำหรับแจ้งเตือนเสียง 🔥
 
 -- ─── CONFIG ────────────────────────────── ⚙️
+local DEBUG_MODE   = false -- Toggle debug mode (true = enabled, false = disabled)
 local USE_DEFAULT_URL = true
 local DEFAULT_URL     = " wss://220303c246ba.ngrok-free.app"
 
 local wsApi = WebSocket or WebSocketClient or (syn and syn.websocket)
 if not wsApi then
-    warn("❌ Executor นี้ไม่รองรับ WebSocket! 🚫")
+    if DEBUG_MODE then
+        warn("❌ Executor นี้ไม่รองรับ WebSocket! 🚫")
+    end
     local noWsGui = Instance.new("ScreenGui", PlayerGui)
     noWsGui.Name = "NoWebSocketWarning"
     local noWsLabel = Instance.new("TextLabel", noWsGui)
@@ -28,11 +31,15 @@ end
 
 -- ป้องกันการรันซ้ำ (Duplicate-run guard) 🛡️
 if PlayerGui:FindFirstChild("PhantomChatHub") then
-    warn("PhantomChatHub: UI already exists in PlayerGui — aborting duplicate execution.")
+    if DEBUG_MODE then
+        warn("PhantomChatHub: UI already exists in PlayerGui — aborting duplicate execution.")
+    end
     return
 end
 if (getgenv and getgenv().PhantomChatHubLoaded) or _G.PhantomChatHubLoaded then
-    warn("PhantomChatHub: already running (global flag) — aborting duplicate execution.")
+    if DEBUG_MODE then
+        warn("PhantomChatHub: already running (global flag) — aborting duplicate execution.")
+    end
     return
 end
 if getgenv then getgenv().PhantomChatHubLoaded = true end
@@ -57,7 +64,9 @@ local settings = {
 
 -- ─── ฟังก์ชัน log ────────────────────── 📜
 local function log(txt)
-    print(txt)
+    if DEBUG_MODE then
+        print(txt)
+    end
 end
 
 -- ─── สร้าง UI ใหม่กับ 2 แท็บ ────────── 🖼️✨
@@ -152,13 +161,22 @@ local function createChatUI()
     chatBtn.TextSize      = 18  
 
     chatBtn.MouseButton1Click:Connect(function()  
-        if sendCooldown then return log("⏱️ โปรดรอซักครู่") end  
-        if not connection or not connected then return log("🔌 ยังไม่เชื่อมต่อ!") end  
+        if sendCooldown then 
+            if DEBUG_MODE then log("⏱️ โปรดรอซักครู่") end 
+            return 
+        end  
+        if not connection or not connected then 
+            if DEBUG_MODE then log("🔌 ยังไม่เชื่อมต่อ!") end 
+            return 
+        end  
         sendCooldown = true  
         task.delay(2, function() sendCooldown = false end)  
 
         local msg = chatInput.Text  
-        if msg == "" then return log("⚠️ กรอกข้อความแชท") end  
+        if msg == "" then 
+            if DEBUG_MODE then log("⚠️ กรอกข้อความแชท") end 
+            return 
+        end  
 
         connection:Send("chat " .. msg)  
         chatInput.Text = ""  
@@ -205,7 +223,7 @@ local function createChatUI()
             uiScaleLabel.Text = "📏 UI Scale: " .. newScale
         else
             uiScaleBox.Text = tostring(settings.uiScale)
-            log("⚠️ UI Scale ต้องอยู่ระหว่าง 0.8-1.5")
+            if DEBUG_MODE then log("⚠️ UI Scale ต้องอยู่ระหว่าง 0.8-1.5") end
         end
     end)
 
@@ -415,14 +433,14 @@ local function handleMessage(msg)
             local auth = {name=LocalPlayer.Name, userId=LocalPlayer.UserId}  
             connection:Send(HttpService:JSONEncode(auth))  
             hasSentAuth = true  
-            log("📤 ส่งชื่อ+ID ไปยังเซิร์ฟเวอร์")  
+            if DEBUG_MODE then log("📤 ส่งชื่อ+ID ไปยังเซิร์ฟเวอร์") end  
             return  
         end  
 
         if not isAuthenticated and msg:find("🔑 ตั้งชื่อสำเร็จ") then  
             isAuthenticated = true  
             if chatGui then chatGui.Enabled = false end  
-            log(msg)  
+            if DEBUG_MODE then log(msg) end  
             return  
         end  
 
@@ -432,16 +450,16 @@ local function handleMessage(msg)
                 if tostring(data.chat):match("^.+:%s.+") then  
                     addChatMessage("🗨️ " .. tostring(data.chat))  
                 else  
-                    log("ℹ️ System: " .. tostring(data.chat))  
+                    if DEBUG_MODE then log("ℹ️ System: " .. tostring(data.chat)) end  
                 end  
             elseif data.error then  
-                log("❌ " .. tostring(data.error))  
+                if DEBUG_MODE then log("❌ " .. tostring(data.error)) end  
             elseif data.command and data.target == LocalPlayer.Name then  
                 if data.command == "kick" then  
-                    log("🦵 คุณถูก kick!")  
+                    if DEBUG_MODE then log("🦵 คุณถูก kick!") end  
                     LocalPlayer:Kick("คุณถูก kick โดย Phantom Hub")  
                 elseif data.command == "kill" then  
-                    log("💀 คุณถูก kill!")  
+                    if DEBUG_MODE then log("💀 คุณถูก kill!") end  
                     local char = LocalPlayer.Character  
                     if char then  
                         local hum = char:FindFirstChildOfClass("Humanoid")  
@@ -450,12 +468,12 @@ local function handleMessage(msg)
                 end  
             end  
         else  
-            log("📄 " .. tostring(msg))  
+            if DEBUG_MODE then log("📄 " .. tostring(msg)) end  
         end
     end)
 
     if not success then
-        log("⚠️ HandleMessage Error: " .. tostring(result))
+        if DEBUG_MODE then log("⚠️ HandleMessage Error: " .. tostring(result)) end
     end
 end
 
@@ -463,17 +481,17 @@ end
 createChatUI()
 function connectToHub(url)
     if connection and connected then
-        log("🔌 Already connected")
+        if DEBUG_MODE then log("🔌 Already connected") end
         return
     end
     if connectCooldown then return end
     connectCooldown = true
     task.delay(2, function() connectCooldown = false end)
 
-    log("🌐 กำลังเชื่อมต่อ: " .. tostring(url))  
+    if DEBUG_MODE then log("🌐 กำลังเชื่อมต่อ: " .. tostring(url)) end  
     local success, sock = pcall(wsApi.connect, url)  
     if not success or not sock then  
-        log("❌ เชื่อมต่อไม่สำเร็จ!")  
+        if DEBUG_MODE then log("❌ เชื่อมต่อไม่สำเร็จ!") end  
         showNotification("❌ การเชื่อมต่อล้มเหลว!")  
         return  
     end  
@@ -494,14 +512,14 @@ function connectToHub(url)
 
     if connection.OnClose then  
         connection.OnClose:Connect(function(code, reason)  
-            log("🔌 การเชื่อมต่อถูกตัด: " .. tostring(reason))  
+            if DEBUG_MODE then log("🔌 การเชื่อมต่อถูกตัด: " .. tostring(reason)) end  
             connected = false  
             showNotification("🔌 การเชื่อมต่อถูกตัด!")  
         end)  
     end  
     if connection.OnError then  
         connection.OnError:Connect(function(err)  
-            log("⚠️ Error: " .. tostring(err))  
+            if DEBUG_MODE then log("⚠️ Error: " .. tostring(err)) end  
             connected = false  
             showNotification("⚠️ การเชื่อมต่อมีปัญหา!")  
         end)  
