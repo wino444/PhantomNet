@@ -7,7 +7,7 @@ local SoundService = game:GetService("SoundService") -- สำหรับแจ
 
 -- ─── CONFIG ────────────────────────────── ⚙️
 local USE_DEFAULT_URL = true
-local DEFAULT_URL     = "wss://0506b9afb5a2.ngrok-free.app"
+local DEFAULT_URL     = " wss://220303c246ba.ngrok-free.app"
 
 local wsApi = WebSocket or WebSocketClient or (syn and syn.websocket)
 if not wsApi then
@@ -421,7 +421,7 @@ local function handleMessage(msg)
 
         if not isAuthenticated and msg:find("🔑 ตั้งชื่อสำเร็จ") then  
             isAuthenticated = true  
-            if chatGui then chatGui.Enabled = true end  
+            if chatGui then chatGui.Enabled = false end  
             log(msg)  
             return  
         end  
