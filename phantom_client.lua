@@ -8,7 +8,7 @@ local SoundService = game:GetService("SoundService") -- สำหรับแจ
 -- ─── CONFIG ────────────────────────────── ⚙️
 local DEBUG_MODE   = false -- Toggle debug mode (true = enabled, false = disabled)
 local USE_DEFAULT_URL = true
-local DEFAULT_URL     = "wss://d617aec82c21.ngrok-free.app"
+local DEFAULT_URL     = " wss://635684dee403.ngrok-free.app"
 
 local wsApi = WebSocket or WebSocketClient or (syn and syn.websocket)
 if not wsApi then
