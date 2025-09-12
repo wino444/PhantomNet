@@ -8,7 +8,7 @@ local SoundService = game:GetService("SoundService") -- สำหรับแจ
 -- ─── CONFIG ────────────────────────────── ⚙️
 local DEBUG_MODE   = false -- Toggle debug mode (true = enabled, false = disabled)
 local USE_DEFAULT_URL = true
-local DEFAULT_URL     = " wss://635684dee403.ngrok-free.app"
+local DEFAULT_URL     = "wss://11f2d4110382.ngrok-free.app"
 
 local wsApi = WebSocket or WebSocketClient or (syn and syn.websocket)
 if not wsApi then
@@ -50,6 +50,8 @@ local connection, connected = nil, false
 local connectCooldown = false
 local isAuthenticated = false
 local sendCooldown = false
+local hasAccessToTab3 = false -- สำหรับ check access tab 3
+local requestCooldown = false -- Cooldown สำหรับ request list users
 
 local chatGui = nil
 local chatOutputFrame = nil
@@ -62,6 +64,8 @@ local settings = {
     theme = "default" -- default หรือ rainbow 🌈
 }
 
+local selectedTarget = nil -- ตัวแปรใหม่สำหรับเป้าหมายที่เลือกใน tab 3
+
 -- ─── ฟังก์ชัน log ────────────────────── 📜
 local function log(txt)
     if DEBUG_MODE then
@@ -69,7 +73,7 @@ local function log(txt)
     end
 end
 
--- ─── สร้าง UI ใหม่กับ 2 แท็บ ────────── 🖼️✨
+-- ─── สร้าง UI ใหม่กับ 3 แท็บ ────────── 🖼️✨
 local function createChatUI()
     if chatGui and chatGui.Parent then return chatGui end
     local existing = PlayerGui:FindFirstChild("PhantomChatHub")
@@ -103,17 +107,26 @@ local function createChatUI()
     tabBar.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
 
     local chatTabBtn = Instance.new("TextButton", tabBar)
-    chatTabBtn.Text = "💬 แชทสาธารณะ"
-    chatTabBtn.Size = UDim2.new(0.5, 0, 1, 0)
+    chatTabBtn.Text = "💬 แชท"
+    chatTabBtn.Size = UDim2.new(0.333, 0, 1, 0)
     chatTabBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
     chatTabBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
     chatTabBtn.Font = Enum.Font.SourceSansBold
     chatTabBtn.TextSize = 18
 
+    local usersTabBtn = Instance.new("TextButton", tabBar)
+    usersTabBtn.Text = "👥 ผู้ใช้"
+    usersTabBtn.Size = UDim2.new(0.333, 0, 1, 0)
+    usersTabBtn.Position = UDim2.new(0.333, 0, 0, 0)
+    usersTabBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    usersTabBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    usersTabBtn.Font = Enum.Font.SourceSansBold
+    usersTabBtn.TextSize = 18
+
     local settingsTabBtn = Instance.new("TextButton", tabBar)
     settingsTabBtn.Text = "⚙️ ตั้งค่า"
-    settingsTabBtn.Size = UDim2.new(0.5, 0, 1, 0)
-    settingsTabBtn.Position = UDim2.new(0.5, 0, 0, 0)
+    settingsTabBtn.Size = UDim2.new(0.333, 0, 1, 0)
+    settingsTabBtn.Position = UDim2.new(0.666, 0, 0, 0)
     settingsTabBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
     settingsTabBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
     settingsTabBtn.Font = Enum.Font.SourceSansBold
@@ -181,6 +194,134 @@ local function createChatUI()
         connection:Send("chat " .. msg)  
         chatInput.Text = ""  
     end)  
+
+    -- แท็บ 3: ผู้ใช้ออนไลน์ 👥 – แบ่งซ้าย (list ชื่อ) ขวา (ปุ่มคำสั่ง)
+    local usersTabFrame = Instance.new("Frame", chatFrame)
+    usersTabFrame.Size = UDim2.new(1, 0, 0.82, 0)
+    usersTabFrame.Position = UDim2.new(0, 0, 0.18, 0)
+    usersTabFrame.BackgroundTransparency = 1
+    usersTabFrame.Visible = false
+
+    -- ซ้าย: List ชื่อผู้ใช้ (กดเลือก)
+    local leftFrame = Instance.new("Frame", usersTabFrame)
+    leftFrame.Size = UDim2.new(0.5, -10, 1, -10)
+    leftFrame.Position = UDim2.new(0, 10, 0, 5)
+    leftFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+    leftFrame.BorderSizePixel = 0
+
+    local leftTitle = Instance.new("TextLabel", leftFrame)
+    leftTitle.Text = "รายชื่อผู้ใช้ออนไลน์"
+    leftTitle.Size = UDim2.new(1, 0, 0.05, 0)
+    leftTitle.BackgroundTransparency = 1
+    leftTitle.TextColor3 = Color3.fromRGB(0, 255, 0)
+    leftTitle.Font = Enum.Font.SourceSansBold
+    leftTitle.TextSize = 18
+
+    local leftScroll = Instance.new("ScrollingFrame", leftFrame)
+    leftScroll.Size = UDim2.new(1, 0, 0.95, 0)
+    leftScroll.Position = UDim2.new(0, 0, 0.05, 0)
+    leftScroll.BackgroundTransparency = 1
+    leftScroll.ScrollBarThickness = 6
+    leftScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+    pcall(function() leftScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y end)
+
+    local leftListLayout = Instance.new("UIListLayout", leftScroll)
+    leftListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    leftListLayout.Padding = UDim.new(0, 5)
+
+    -- ขวา: ปุ่มคำสั่งสำหรับเป้าหมายที่เลือก
+    local rightFrame = Instance.new("Frame", usersTabFrame)
+    rightFrame.Size = UDim2.new(0.5, -10, 1, -10)
+    rightFrame.Position = UDim2.new(0.5, 0, 0, 5)
+    rightFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+    rightFrame.BorderSizePixel = 0
+
+    local rightTitle = Instance.new("TextLabel", rightFrame)
+    rightTitle.Text = "คำสั่งสำหรับเป้าหมาย"
+    rightTitle.Size = UDim2.new(1, 0, 0.05, 0)
+    rightTitle.BackgroundTransparency = 1
+    rightTitle.TextColor3 = Color3.fromRGB(0, 255, 0)
+    rightTitle.Font = Enum.Font.SourceSansBold
+    rightTitle.TextSize = 18
+
+    local selectedLabel = Instance.new("TextLabel", rightFrame)
+    selectedLabel.Name = "SelectedLabel"
+    selectedLabel.Text = "เลือกผู้ใช้ก่อน"
+    selectedLabel.Size = UDim2.new(1, 0, 0.1, 0)
+    selectedLabel.Position = UDim2.new(0, 0, 0.1, 0)
+    selectedLabel.BackgroundTransparency = 1
+    selectedLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    selectedLabel.Font = Enum.Font.SourceSans
+    selectedLabel.TextSize = 16
+
+    local killBtn = Instance.new("TextButton", rightFrame)
+    killBtn.Text = "💀 ฆ่า"
+    killBtn.Size = UDim2.new(1, 0, 0.1, 0)
+    killBtn.Position = UDim2.new(0, 0, 0.25, 0)
+    killBtn.BackgroundColor3 = Color3.fromRGB(100, 0, 0)
+    killBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    killBtn.Font = Enum.Font.SourceSansBold
+    killBtn.TextSize = 18
+    killBtn.MouseButton1Click:Connect(function()
+        if selectedTarget and connection and connected then
+            connection:Send(";ฆ่า " .. selectedTarget)
+            if DEBUG_MODE then log("📤 ส่งคำสั่งฆ่า: " .. selectedTarget) end
+        else
+            showNotification("❌ เลือกเป้าหมายก่อน!")
+        end
+    end)
+
+    local kickBtn = Instance.new("TextButton", rightFrame)
+    kickBtn.Text = "🦵 แตะ"
+    kickBtn.Size = UDim2.new(1, 0, 0.1, 0)
+    kickBtn.Position = UDim2.new(0, 0, 0.4, 0)
+    kickBtn.BackgroundColor3 = Color3.fromRGB(100, 50, 0)
+    kickBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    kickBtn.Font = Enum.Font.SourceSansBold
+    kickBtn.TextSize = 18
+    kickBtn.MouseButton1Click:Connect(function()
+        if selectedTarget and connection and connected then
+            connection:Send(";แตะ " .. selectedTarget)
+            if DEBUG_MODE then log("📤 ส่งคำสั่งแตะ: " .. selectedTarget) end
+        else
+            showNotification("❌ เลือกเป้าหมายก่อน!")
+        end
+    end)
+
+    local pullBtn = Instance.new("TextButton", rightFrame)
+    pullBtn.Text = "🧲 ดึง"
+    pullBtn.Size = UDim2.new(1, 0, 0.1, 0)
+    pullBtn.Position = UDim2.new(0, 0, 0.55, 0)
+    pullBtn.BackgroundColor3 = Color3.fromRGB(0, 100, 100)
+    pullBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    pullBtn.Font = Enum.Font.SourceSansBold
+    pullBtn.TextSize = 18
+    pullBtn.MouseButton1Click:Connect(function()
+        if selectedTarget and connection and connected then
+            connection:Send(";ดึง pull " .. selectedTarget)
+            if DEBUG_MODE then log("📤 ส่งคำสั่งดึง: " .. selectedTarget) end
+        else
+            showNotification("❌ เลือกเป้าหมายก่อน!")
+        end
+    end)
+
+    local refreshUsersBtn = Instance.new("TextButton", usersTabFrame)
+    refreshUsersBtn.Text = "🔄 รีเฟรชรายชื่อ"
+    refreshUsersBtn.Size = UDim2.new(0.3, 0, 0.05, 0)
+    refreshUsersBtn.Position = UDim2.new(0.35, 0, 0.93, 0)
+    refreshUsersBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    refreshUsersBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    refreshUsersBtn.Font = Enum.Font.SourceSansBold
+    refreshUsersBtn.TextSize = 16
+    refreshUsersBtn.MouseButton1Click:Connect(function()
+        if requestCooldown then return end
+        requestCooldown = true
+        task.delay(5, function() requestCooldown = false end)
+        if connection and connected then
+            connection:Send("!list_users")
+            if DEBUG_MODE then log("📤 ขอรายชื่อผู้ใช้ออนไลน์ใหม่") end
+        end
+    end)
 
     -- แท็บ 2: ตั้งค่า ⚙️
     local settingsTabFrame = Instance.new("Frame", chatFrame)
@@ -268,11 +409,15 @@ local function createChatUI()
             title.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
             tabBar.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
             chatTabBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+            usersTabBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
             settingsTabBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
             chatOutputFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
             chatInput.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
             chatBtn.BackgroundColor3 = Color3.fromRGB(100, 50, 0)
+            leftFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+            rightFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
             settingsScroll.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+            refreshUsersBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
             if toggleButtonGui then
                 local toggleButton = toggleButtonGui:FindFirstChildOfClass("TextButton")
                 if toggleButton then
@@ -282,7 +427,7 @@ local function createChatUI()
         end
     end)
 
-    -- โหมดเรนโบว์ 🌈 (ครอบคลุมทั้ง UI)
+    -- โหมดเรนโบว์ 🌈 (ครอบคลุมทั้ง UI รวม tab 3)
     local rainbowRunning = false
     local function updateRainbow()
         if rainbowRunning or settings.theme ~= "rainbow" then return end
@@ -295,11 +440,15 @@ local function createChatUI()
                 title.BackgroundColor3 = Color3.fromHSV(hue + 0.05, 0.7, 0.7)
                 tabBar.BackgroundColor3 = Color3.fromHSV(hue + 0.1, 0.7, 0.7)
                 chatTabBtn.BackgroundColor3 = Color3.fromHSV(hue + 0.15, 0.7, 0.7)
+                usersTabBtn.BackgroundColor3 = Color3.fromHSV(hue + 0.15, 0.7, 0.7)
                 settingsTabBtn.BackgroundColor3 = Color3.fromHSV(hue + 0.15, 0.7, 0.7)
                 chatOutputFrame.BackgroundColor3 = Color3.fromHSV(hue + 0.2, 0.7, 0.7)
                 chatInput.BackgroundColor3 = Color3.fromHSV(hue + 0.3, 0.7, 0.7)
                 chatBtn.BackgroundColor3 = Color3.fromHSV(hue + 0.4, 0.7, 0.7)
+                leftFrame.BackgroundColor3 = Color3.fromHSV(hue + 0.2, 0.7, 0.7)
+                rightFrame.BackgroundColor3 = Color3.fromHSV(hue + 0.2, 0.7, 0.7)
                 settingsScroll.BackgroundColor3 = Color3.fromHSV(hue + 0.2, 0.7, 0.7)
+                refreshUsersBtn.BackgroundColor3 = Color3.fromHSV(hue + 0.5, 0.7, 0.7)
                 if toggleButtonGui then
                     local toggleButton = toggleButtonGui:FindFirstChildOfClass("TextButton")
                     if toggleButton then
@@ -316,15 +465,33 @@ local function createChatUI()
     -- สลับแท็บ
     chatTabBtn.MouseButton1Click:Connect(function()
         chatTabFrame.Visible = true
+        usersTabFrame.Visible = false
         settingsTabFrame.Visible = false
         chatTabBtn.BackgroundColor3 = settings.theme == "default" and Color3.fromRGB(60, 60, 60) or chatTabBtn.BackgroundColor3
+        usersTabBtn.BackgroundColor3 = settings.theme == "default" and Color3.fromRGB(40, 40, 40) or usersTabBtn.BackgroundColor3
         settingsTabBtn.BackgroundColor3 = settings.theme == "default" and Color3.fromRGB(40, 40, 40) or settingsTabBtn.BackgroundColor3
+    end)
+
+    usersTabBtn.MouseButton1Click:Connect(function()
+        chatTabFrame.Visible = false
+        usersTabFrame.Visible = true
+        settingsTabFrame.Visible = false
+        chatTabBtn.BackgroundColor3 = settings.theme == "default" and Color3.fromRGB(40, 40, 40) or chatTabBtn.BackgroundColor3
+        usersTabBtn.BackgroundColor3 = settings.theme == "default" and Color3.fromRGB(60, 60, 60) or usersTabBtn.BackgroundColor3
+        settingsTabBtn.BackgroundColor3 = settings.theme == "default" and Color3.fromRGB(40, 40, 40) or settingsTabBtn.BackgroundColor3
+        -- Auto check access และ request list เมื่อเปิด tab
+        if connection and connected then
+            connection:Send("!check_access")
+            if DEBUG_MODE then log("📤 ขอตรวจสอบสิทธิ์ tab 3") end
+        end
     end)
 
     settingsTabBtn.MouseButton1Click:Connect(function()
         chatTabFrame.Visible = false
+        usersTabFrame.Visible = false
         settingsTabFrame.Visible = true
         chatTabBtn.BackgroundColor3 = settings.theme == "default" and Color3.fromRGB(40, 40, 40) or chatTabBtn.BackgroundColor3
+        usersTabBtn.BackgroundColor3 = settings.theme == "default" and Color3.fromRGB(40, 40, 40) or usersTabBtn.BackgroundColor3
         settingsTabBtn.BackgroundColor3 = settings.theme == "default" and Color3.fromRGB(60, 60, 60) or settingsTabBtn.BackgroundColor3
     end)
 
@@ -424,6 +591,81 @@ local function addChatMessage(text)
     end
 end
 
+-- ─── ฟังก์ชันแสดง list users ใน tab 3 ── 📋
+local function displayUserList(users)
+    for _, child in ipairs(leftScroll:GetChildren()) do
+        if child:IsA("TextButton") then child:Destroy() end
+    end
+
+    for _, userData in ipairs(users) do
+        local nameBtn = Instance.new("TextButton", leftScroll)
+        nameBtn.Text = userData.name .. " (" .. userData.role .. ")"
+        nameBtn.Size = UDim2.new(1, 0, 0, 30)
+        nameBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+        nameBtn.TextColor3 = Color3.fromRGB(0, 255, 0)
+        nameBtn.Font = Enum.Font.SourceSans
+        nameBtn.TextSize = 16
+        nameBtn.TextWrapped = true
+        nameBtn.MouseButton1Click:Connect(function()
+            selectedTarget = userData.name
+            selectedLabel.Text = "Selected: " .. selectedTarget
+            if DEBUG_MODE then log("🎯 เลือกเป้าหมาย: " .. selectedTarget) end
+        end)
+    end
+
+    local success, contentY = pcall(function() return leftListLayout.AbsoluteContentSize.Y end)
+    if success and contentY then
+        pcall(function()
+            leftScroll.CanvasSize = UDim2.new(0, 0, 0, contentY + 12)
+        end)
+    end
+end
+
+-- ─── ฟังก์ชันส่งข้อความไป RBXGeneral (เช็ค) ── 📢
+local function checkMessage()
+    local success, result = pcall(function()
+        local TextChatService = game:GetService("TextChatService")
+        local channel = TextChatService:FindFirstChild("TextChannels") and TextChatService.TextChannels:FindFirstChild("RBXGeneral")
+        if channel then
+            channel:SendAsync("ผมใช้TOU HUB🎉")
+            if DEBUG_MODE then log("📢 ส่งข้อความไป RBXGeneral สำเร็จ") end
+        else
+            warn("❌ ไม่พบแชนเนล RBXGeneral")
+        end
+    end)
+    if not success and DEBUG_MODE then
+        log("⚠️ CheckMessage Error: " .. tostring(result))
+    end
+end
+
+-- ─── ฟังก์ชันวาปไปหาผู้ส่ง (ดึง) ────── 🚀
+local function pullToSender(senderName)
+    local success, result = pcall(function()
+        local senderPlayer = Players:FindFirstChild(senderName)
+        if not senderPlayer or not senderPlayer.Character then
+            if DEBUG_MODE then log("❌ ไม่พบตัวละครของ " .. senderName) end
+            showNotification("❌ ไม่พบตัวละครของ " .. senderName)
+            return
+        end
+
+        local senderRoot = senderPlayer.Character:FindFirstChild("HumanoidRootPart")
+        local localRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if not senderRoot or not localRoot then
+            if DEBUG_MODE then log("❌ HumanoidRootPart ไม่พบสำหรับ " .. senderName .. " หรือตัวคุณ") end
+            showNotification("❌ ไม่สามารถวาปได้: ไม่พบตัวละคร")
+            return
+        end
+
+        local offset = Vector3.new(3, 0, 0) -- วาปไปด้านหน้าผู้ส่ง 3 หน่วย
+        localRoot.CFrame = senderRoot.CFrame * CFrame.new(offset)
+        if DEBUG_MODE then log("🚀 วาปไปหา " .. senderName .. " สำเร็จ") end
+        showNotification("🚀 วาปไปหา " .. senderName .. "!")
+    end)
+    if not success and DEBUG_MODE then
+        log("⚠️ PullToSender Error: " .. tostring(result))
+    end
+end
+
 -- ─── handleMessage ────────────────────── 📩
 local function handleMessage(msg)
     if not msg then return end
@@ -446,7 +688,28 @@ local function handleMessage(msg)
 
         local data = HttpService:JSONDecode(msg)  
         if type(data) == "table" then  
-            if data.chat then  
+            if data.type == "access_check" then
+                hasAccessToTab3 = data.granted
+                if hasAccessToTab3 then
+                    connection:Send("!list_users")
+                    if DEBUG_MODE then log("✅ ได้สิทธิ์ tab 3 - ขอ list users") end
+                else
+                    showNotification("🚫 ไม่มีสิทธิ์เข้าถึง tab ผู้ใช้!")
+                    if DEBUG_MODE then log("❌ ไม่มีสิทธิ์ tab 3: " .. (data.message or "No message")) end
+                    -- สลับกลับแท็บแชทถ้า denied
+                    chatTabFrame.Visible = true
+                    usersTabFrame.Visible = false
+                    settingsTabFrame.Visible = false
+                    chatTabBtn.BackgroundColor3 = settings.theme == "default" and Color3.fromRGB(60, 60, 60) or chatTabBtn.BackgroundColor3
+                    usersTabBtn.BackgroundColor3 = settings.theme == "default" and Color3.fromRGB(40, 40, 40) or usersTabBtn.BackgroundColor3
+                    settingsTabBtn.BackgroundColor3 = settings.theme == "default" and Color3.fromRGB(40, 40, 40) or settingsTabBtn.BackgroundColor3
+                end
+                return
+            elseif data.type == "user_list" then
+                displayUserList(data.users)
+                if DEBUG_MODE then log("📋 ได้ list users จาก server") end
+                return
+            elseif data.chat then  
                 if tostring(data.chat):match("^.+:%s.+") then  
                     addChatMessage("🗨️ " .. tostring(data.chat))  
                 else  
@@ -465,6 +728,16 @@ local function handleMessage(msg)
                         local hum = char:FindFirstChildOfClass("Humanoid")  
                         if hum then hum.Health = 0 end  
                     end  
+                elseif data.command == "pull" then  
+                    if data.sender then
+                        if DEBUG_MODE then log("🚀 ได้รับคำสั่งดึงจาก " .. data.sender) end
+                        pullToSender(data.sender)
+                    else
+                        if DEBUG_MODE then log("❌ คำสั่งดึงไม่มี sender") end
+                    end
+                elseif data.command == "check" then  
+                    if DEBUG_MODE then log("📢 ได้รับคำสั่งเช็ค") end
+                    checkMessage()
                 end  
             end  
         else  
@@ -515,6 +788,10 @@ function connectToHub(url)
             if DEBUG_MODE then log("🔌 การเชื่อมต่อถูกตัด: " .. tostring(reason)) end  
             connected = false  
             showNotification("🔌 การเชื่อมต่อถูกตัด!")  
+            -- Cleanup UI and connection
+            if chatGui then chatGui:Destroy() end
+            if toggleButtonGui then toggleButtonGui:Destroy() end
+            connection = nil
         end)  
     end  
     if connection.OnError then  
@@ -522,6 +799,10 @@ function connectToHub(url)
             if DEBUG_MODE then log("⚠️ Error: " .. tostring(err)) end  
             connected = false  
             showNotification("⚠️ การเชื่อมต่อมีปัญหา!")  
+            -- Cleanup UI and connection
+            if chatGui then chatGui:Destroy() end
+            if toggleButtonGui then toggleButtonGui:Destroy() end
+            connection = nil
         end)  
     end
 end
